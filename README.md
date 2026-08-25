@@ -8,7 +8,7 @@
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue?logo=python&logoColor=white)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
-![Tests](https://github.com/nandan-ai/earner/actions/workflows/ci.yml/badge.svg)
+![Tests](https://github.com/Nandan222001/earner/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)
 
@@ -41,7 +41,7 @@
 ## 🚀 Quick Start
 
 ```bash
-git clone https://github.com/nandan-ai/earner.git
+git clone https://github.com/Nandan222001/earner.git
 cd earner
 pip install -r requirements.txt
 
@@ -157,7 +157,7 @@ PRs welcome! Read [CONTRIBUTING.md](CONTRIBUTING.md) — new strategies are the 
 
 If Earner saved you time (or landed you a gig), consider giving it a star — it helps others find it.
 
-[![Star History Chart](https://api.star-history.com/svg?repos=nandan-ai/earner&type=Date)](https://star-history.com/#nandan-ai/earner&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Nandan222001/earner&type=Date)](https://star-history.com/#Nandan222001/earner&Date)
 
 
 
