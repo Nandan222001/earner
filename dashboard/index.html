@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Earner - Survival Dashboard</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--bg:#0d1117;--card:#161b22;--edge:#30363d;--fg:#e6edf3;--dim:#8b949e;
+--green:#3fb950;--red:#f85149;--amber:#d29922;--blue:#58a6ff}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:Consolas,'Segoe UI',monospace;margin:0;padding:24px}
+h1{margin:0 0 4px;font-size:22px} .sub{color:var(--dim);font-size:12px;margin-bottom:20px}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+.card{background:var(--card);border:1px solid var(--edge);border-radius:10px;padding:16px}
+.card h2{margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--dim)}
+.big{font-size:30px;font-weight:700}
+.bar{height:12px;background:#21262d;border-radius:6px;overflow:hidden;margin-top:10px}
+.bar>i{display:block;height:100%;background:var(--green);transition:width .6s}
+.row{display:flex;justify-content:space-between;gap:10px;margin:4px 0;font-size:13px}
+.ok{color:var(--green)}.bad{color:var(--red)}.warn{color:var(--amber)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+td,th{padding:5px 6px;border-bottom:1px solid var(--edge);text-align:left}
+th{color:var(--dim);font-weight:400}
+ul{margin:6px 0 0;padding-left:18px;font-size:13px}
+li{margin:3px 0}
+a{color:var(--blue);text-decoration:none}
+.empty{color:var(--amber);font-size:13px}
+footer{color:var(--dim);font-size:11px;margin-top:18px}
+.pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;border:1px solid var(--edge)}
+.alive{border-color:var(--green);color:var(--green)}
+.dead{border-color:var(--red);color:var(--red)}
+</style>
+</head>
+<body>
+<h1>Earner <span id="pill" class="pill dead">offline</span></h1>
+<div class="sub" id="updated">waiting for data...</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Survival today</h2>
+    <div class="big"><span id="earned">$0.00</span><span style="color:var(--dim);font-size:14px"> / $<span id="target">-</span></span></div>
+    <div class="bar"><i id="barfill" style="width:0%"></i></div>
+    <div class="row"><span>progress</span><b id="pct">0%</b></div>
+    <div class="row"><span>streak</span><b id="streak">0 days</b></div>
+    <div class="row"><span>paper pnl today</span><b id="paper">$0.00</b></div>
+  </div>
+  <div class="card"><h2>Paper wallet</h2><div id="wallet" class="empty">no data</div></div>
+</div>
+
+<div class="grid" style="margin-top:14px" id="strategies"></div>
+
+<div class="grid" style="margin-top:14px">
+  <div class="card"><h2>Recent transactions</h2><div id="txs" class="empty">no data</div></div>
+  <div class="card"><h2>Output files</h2><div id="files" class="empty">no data</div></div>
+</div>
+
+<footer>Earner agent &middot; auto-refresh 30s &middot; run <code>python earner.py run</code> to start earning cycles</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const money = v => '$' + Number(v||0).toFixed(2);
+
+async function refresh(){
+  try{
+    const s = await (await fetch('../data/status.json?'+Date.now())).json();
+    const sv = s.survival||{};
+    $('pill').textContent='ALIVE'; $('pill').className='pill alive';
+    $('updated').textContent = 'updated ' + s.generated_at + ' (day ' + s.day + ')';
+    $('earned').textContent = money(sv.real_earned_today);
+    $('target').textContent = Number(sv.target_usd||0).toFixed(2);
+    const pct = Math.min(sv.progress_pct||0,100);
+    $('barfill').style.width = pct+'%';
+    $('barfill').style.background = (sv.progress_pct>=100)?'var(--green)':'var(--amber)';
+    $('pct').textContent = (sv.progress_pct||0)+'%';
+    $('streak').textContent = (sv.streak_days||0)+' days';
+    $('paper').textContent = money(sv.paper_pnl_today);
+
+    const w = s.paper_wallet||{};
+    const pos = w.position? `<div class="row warn"><span>open position @ ${money(w.position.entry)}</span><b>${w.position.qty.toFixed(6)}</b></div>`:'';
+    $('wallet').innerHTML =
+      `<div class="big">${money(w.usd)} cash</div>${pos}
+       <div class="sub" style="margin-top:8px">simulated wallet - goes live once exchange API keys are set</div>`;
+
+    let cards='';
+    for(const [name,r] of Object.entries(s.strategies||{})){
+      const head = r.ok? '<span class="ok">OK</span>'
+                       : `<span class="bad">${String(r.error||'failed').slice(0,90)}</span>`;
+      let detail='';
+      for(const k of ['price','signal','equity_usd','scanned','new_matches'])
+        if(r[k]!==undefined) detail += `<div class="row"><span>${k.replace(/_/g,' ')}</span><b>${JSON.stringify(r[k]).slice(0,60)}</b></div>`;
+      if(r.articles) detail += r.articles.slice(0,3).map(a=>
+        `<div class="row"><span>${(a.title||'').slice(0,38)}</span><b>${a.words}w</b></div>`).join('');
+      if(r.leads) r.leads.slice(0,3).forEach(l=>
+        detail += `<div class="row"><span><a href="${l.url}" target="_blank">${String(l.title||'').slice(0,34)}</a></span><b>${l.hourly?'$'+l.hourly+'/h':'-'}</b></div>`);
+      cards += `<div class="card"><h2>${name}</h2>${head}${detail}</div>`;
+    }
+    $('strategies').innerHTML = cards || '<div class="card empty">no strategy results yet</div>';
+
+    const rows = (s.recent_transactions||[]).map(t=>
+      `<tr><td>${t.ts.slice(5,16)}</td><td>${t.strategy}</td>
+       <td class="${t.kind==='earn'?'ok':(t.kind==='spend'?'bad':'')}">${t.kind}</td>
+       <td>${money(t.amount)}</td><td>${String(t.note).slice(0,60)}</td></tr>`).join('');
+    $('txs').innerHTML = rows? `<table><tr><th>time</th><th>strategy</th><th>kind</th><th>amt</th><th>note</th></tr>${rows}</table>` : 'none yet';
+
+    $('files').innerHTML =
+      '<b>articles:</b><ul>'+(s.articles||[]).slice(-5).map(a=>`<li>${a}</li>`).join('')+'</ul>'+
+      '<b>gig leads:</b><ul>'+(s.gigs||[]).slice(-5).map(g=>`<li>${g}</li>`).join('')+'</ul>';
+  }catch(e){
+    $('pill').textContent='offline'; $('pill').className='pill dead';
+    $('updated').textContent='cannot read ../data/status.json - has the agent run yet?';
+  }
+}
+refresh(); setInterval(refresh,30000);
+</script>
+</body>
+</html>
+

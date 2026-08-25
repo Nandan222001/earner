@@ -1,0 +1,53 @@
+# ============================================================
+# Earner Agent configuration
+# Fill in the blanks marked with "" to unlock real earning.
+# Everything works in safe paper/demo mode until you do.
+# ============================================================
+
+agent:
+  name: "Earner"
+  loop_interval_minutes: 30        # how often strategies re-run
+
+survival:
+  daily_target_usd: 10.0           # what the agent must earn per day to "stay alive"
+  currency: USD
+
+notifications:
+  webhook_url: ""                  # optional Discord/Slack-style webhook for alerts
+
+strategies:
+
+  trading_bot:
+    enabled: true
+    mode: paper                    # paper = simulated | live = real orders (needs keys)
+    exchange: binance              # binance, kraken, kucoin... (used by ccxt in live mode)
+    symbol: BTCUSDT
+    stake_usd_per_trade: 5
+    take_profit_pct: 2.0           # sell when up this %
+    stop_loss_pct: 1.5             # sell when down this %
+    max_daily_loss_usd: 2          # circuit breaker - stop trading after this loss
+    api_key: ""                    # REQUIRED only for live mode
+    api_secret: ""
+
+  affiliate_content:
+    enabled: true
+    articles_per_run: 2
+    site_name: "The Side Hustle Desk"
+    amazon_tag: ""                 # e.g. "yourid-20" -> real commission links
+    custom_links: []               # e.g. [{url: "https://example.com/?ref=you", keywords: ["vpn","privacy"]}]
+    openai_api_key: ""             # optional: better writing quality via OpenAI-compatible API
+    openai_base_url: "https://api.openai.com/v1"
+    openai_model: "gpt-4o-mini"
+    wordpress:
+      enabled: false
+      url: ""                      # e.g. "http://localhost/wp"
+      username: ""
+      app_password: ""             # WP admin -> Users -> Application Passwords
+
+  micro_tasks:
+    enabled: true
+    skills: ["python", "web scraping", "wordpress", "data entry"]
+    min_hourly_usd: 12
+    max_leads_per_run: 5
+    feed_urls:
+      - "https://remotive.com/api/remote-jobs?limit=60"

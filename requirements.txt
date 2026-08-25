@@ -1,0 +1,4 @@
+PyYAML>=6.0
+requests>=2.31
+# Optional - only needed for LIVE crypto trading:
+# ccxt>=4.0
