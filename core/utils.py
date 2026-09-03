@@ -36,16 +36,20 @@ def _request(fn, retries):
     raise last
 
 
-def http_get_json(url, timeout=20, retries=2):
+def http_get_json(url, timeout=20, retries=2, headers=None):
     import requests
-    headers = {"User-Agent": "EarnerAgent/1.0 (local automation; contact: you)"}
-    return _request(lambda: _raise_ok(requests.get(url, headers=headers, timeout=timeout)).json(), retries)
+    h = {"User-Agent": "EarnerAgent/1.0 (local automation; contact: you)", "Accept": "application/json"}
+    if headers:
+        h.update(headers)
+    return _request(lambda: _raise_ok(requests.get(url, headers=h, timeout=timeout)).json(), retries)
 
 
-def http_get_text(url, timeout=20, retries=2):
+def http_get_text(url, timeout=20, retries=2, headers=None):
     import requests
-    headers = {"User-Agent": "EarnerAgent/1.0 (local automation; contact: you)"}
-    return _request(lambda: _raise_ok(requests.get(url, headers=headers, timeout=timeout)).text, retries)
+    h = {"User-Agent": "EarnerAgent/1.0 (local automation; contact: you)"}
+    if headers:
+        h.update(headers)
+    return _request(lambda: _raise_ok(requests.get(url, headers=h, timeout=timeout)).text, retries)
 
 
 def http_post_json(url, payload=None, auth=None, headers=None, timeout=25, retries=1):

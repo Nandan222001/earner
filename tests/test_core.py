@@ -14,8 +14,9 @@ os.chdir(ROOT)
 
 from core.agent import DEFAULTS, deep_merge          # noqa: E402
 from core.ledger import Ledger                        # noqa: E402
-from strategies.micro_tasks import parse_salary       # noqa: E402
+from strategies.micro_tasks import MicroTasks, parse_salary  # noqa: E402
 from strategies.trading_bot import TradingBot         # noqa: E402
+from strategies.bounty_scout import BountyScout       # noqa: E402
 
 
 def make_ctx(db_path):
@@ -67,6 +68,14 @@ class LedgerTests(unittest.TestCase):
     def test_invalid_kind_rejected(self):
         with self.assertRaises(AssertionError):
             self.led.record("t", "free_money", 100)
+
+    def test_lead_count_is_not_sum_of_zero_amounts(self):
+        self.led.record("gigs", "lead", 0, note="a")
+        self.led.record("gigs", "lead", 0, note="b")
+        self.led.record("gigs", "earn", 12.5)
+        today = self.led.per_strategy_today()["gigs"]
+        self.assertEqual(today["lead"], 2)
+        self.assertEqual(today["earn"], 12.5)
 
 
 class SalaryParsingTests(unittest.TestCase):
@@ -142,6 +151,55 @@ class TradingBotTests(unittest.TestCase):
         res = self.bot_over(self.DOWNTREND)                        # SMA6 < SMA24
         self.assertEqual(res["signal"], "wait")
         self.assertEqual(res["actions"], [])
+
+
+class JobNormalizeTests(unittest.TestCase):
+    def test_json_items_from_common_wrappers(self):
+        self.assertEqual(MicroTasks._json_items({"jobs": [1]}), [1])
+        self.assertEqual(MicroTasks._json_items({"results": [2]}), [2])
+        self.assertEqual(MicroTasks._json_items([3]), [3])
+
+    def test_normalize_nested_company(self):
+        j = MicroTasks._normalize_job({
+            "id": 9, "title": "Python scraper",
+            "company": {"name": "Acme"},
+            "contents": "Pay $30/hr remote",
+            "refs": {"landing_page": "https://example.com/job"},
+        })
+        self.assertEqual(j["company"], "Acme")
+        self.assertEqual(j["url"], "https://example.com/job")
+        self.assertIn("30", j["description"])
+
+
+class BountyScoutTests(unittest.TestCase):
+    def setUp(self):
+        self.db = tmp_db()
+        self.ctx = make_ctx(self.db)
+        self.ctx.notify = lambda t: None
+        self.ctx.out_gigs = tempfile.mkdtemp()
+
+    def tearDown(self):
+        self.ctx.ledger.close()
+        os.unlink(self.db)
+
+    def test_records_leads_from_search(self):
+        scout = BountyScout({"skills": ["python"], "max_leads_per_run": 2})
+        scout._search = lambda q: [{
+            "id": "https://github.com/x/y/issues/1",
+            "title": "Pay bounty for docs",
+            "repo": "x/y",
+            "url": "https://github.com/x/y/issues/1",
+            "stars": 0,
+            "labels": ["bounty"],
+            "score": 18,
+            "body": "fix the README",
+        }]
+        res = scout.run(self.ctx)
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["new_matches"], 1)
+        notes = [t["note"] for t in self.ctx.ledger.recent(5) if t["kind"] == "lead"]
+        self.assertTrue(any("Pay bounty for docs" in n for n in notes))
+        self.assertGreaterEqual(len(os.listdir(self.ctx.out_gigs)), 1)
 
 
 class ConfigTests(unittest.TestCase):

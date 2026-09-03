@@ -1,10 +1,10 @@
 """Strategy: writes SEO articles around your affiliate links; optional WP publish."""
 import os
 import random
-from urllib.parse import quote_plus
+from urllib.parse import quote, quote_plus
 
 from .base import BaseStrategy
-from core.utils import http_post_json, now_iso, strip_html, today_str
+from core.utils import http_get_json, http_post_json, now_iso, strip_html, today_str
 
 TOPICS = [
     ("best-budget-standing-desks", "standing desk", "Best Budget Standing Desks Under $200"),
@@ -46,11 +46,18 @@ class AffiliateContent(BaseStrategy):
     def run(self, ctx):
         n = int(self.opt("articles_per_run", 2))
         site = self.opt("site_name", "Earner Blog")
-        rng = random.Random(f"{today_str()}|{site}")
-        picks = rng.sample(TOPICS, k=min(n, len(TOPICS)))
+        written = set(ctx.ledger.get_state("article_slugs", []) or [])
+        remaining = [t for t in TOPICS if t[0] not in written]
+        if not remaining:
+            remaining = list(TOPICS)
+            written = set()
+        rng = random.Random(f"{today_str()}|{site}|{len(written)}")
+        picks = rng.sample(remaining, k=min(n, len(remaining)))
         articles, published = [], []
         for slug, keyword, title in picks:
-            blocks = self._blocks(title, keyword, rng)
+            wiki = self._wiki_facts(keyword)
+            ddg = self._ddg_abstract(keyword)
+            blocks = self._blocks(title, keyword, rng, wiki, ddg)
             html = self._render_html(title, blocks, site)
             fname = f"{today_str()}-{slug}.html"
             with open(os.path.join(ctx.out_articles, fname), "w", encoding="utf-8") as f:
@@ -59,17 +66,54 @@ class AffiliateContent(BaseStrategy):
             ctx.ledger.record("affiliate_content", "lead", 0,
                               note=f"article '{title}' ({words} words) -> data/output/articles/{fname}")
             articles.append({"file": fname, "title": title, "words": words})
+            written.add(slug)
             url = self._publish_wordpress(title, html)
             if url:
                 published.append(url)
                 ctx.notify(f"Published article: {title}")
+        ctx.ledger.set_state("article_slugs", sorted(written))
         return {"ok": True, "articles": articles, "published": published}
 
     # -------------------------------------------------- generation ---
-    def _blocks(self, title, keyword, rng):
+    def _wiki_facts(self, keyword):
+        """Free Wikipedia REST API — no key, used to ground article copy."""
+        try:
+            data = http_get_json(
+                f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(keyword)}",
+                headers={"Accept": "application/json"},
+            )
+            extract = strip_html((data or {}).get("extract") or "")
+            return extract[:500] if extract else ""
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def _ddg_abstract(self, keyword):
+        """DuckDuckGo Instant Answer API — no key."""
+        try:
+            data = http_get_json(
+                f"https://api.duckduckgo.com/?q={quote_plus(keyword)}&format=json&no_html=1&skip_disambig=1")
+            abs_ = strip_html((data or {}).get("AbstractText") or "")
+            related = []
+            for t in ((data or {}).get("RelatedTopics") or [])[:4]:
+                if isinstance(t, dict) and t.get("Text"):
+                    related.append(strip_html(t["Text"])[:160])
+            parts = []
+            if abs_:
+                parts.append(abs_[:400])
+            if related:
+                parts.append("Related: " + " | ".join(related))
+            return " ".join(parts)
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def _blocks(self, title, keyword, rng, wiki="", ddg=""):
         link = self._link(keyword)
         b = [("p", f"{rng.choice(INTRO)} This guide covers the best value {keyword} options, "
                    f"updated {today_str()}.")]
+        if wiki:
+            b.append(("p", f"Background: {wiki}"))
+        if ddg:
+            b.append(("p", ddg[:450]))
         b.append(("h2", f"Why the right {keyword} matters"))
         for s in ["It affects your daily comfort and output more than almost any other purchase.",
                   "Cheap alternatives often cost more over time through replacements.",

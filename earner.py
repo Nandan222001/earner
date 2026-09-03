@@ -68,7 +68,7 @@ def main():
         print("-" * 58)
         for st, d in agent.status_payload()["per_strategy_today"].items():
             earn = d.get("earn", 0.0)
-            lead = d.get("lead", 0)
+            lead = int(d.get("lead", 0) or 0)
             print(f" {st:<20} real ${earn:>7.2f}   leads today: {lead}")
         print("=" * 58)
 

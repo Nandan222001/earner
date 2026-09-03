@@ -2,11 +2,13 @@
 from .trading_bot import TradingBot
 from .affiliate_content import AffiliateContent
 from .micro_tasks import MicroTasks
+from .bounty_scout import BountyScout
 
 REGISTRY = {
     "trading_bot": TradingBot,
     "affiliate_content": AffiliateContent,
     "micro_tasks": MicroTasks,
+    "bounty_scout": BountyScout,
 }
 
 

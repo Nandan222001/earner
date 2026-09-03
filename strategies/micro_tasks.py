@@ -41,11 +41,17 @@ class MicroTasks(BaseStrategy):
                 jobs.extend(self._fetch(url))
             except Exception as e:  # noqa: BLE001
                 ctx.log.warning("[micro_tasks] feed failed %s : %s", url, e)
+        try:
+            jobs.extend(self._builtin_feeds())
+        except Exception as e:  # noqa: BLE001
+            ctx.log.warning("[micro_tasks] builtin feeds failed: %s", e)
         scanned = len(jobs)
 
         seen = set(ctx.ledger.get_state(self.SEEN_KEY, []))
         scored = []
         for j in jobs:
+            if not isinstance(j, dict) or not j.get("id"):
+                continue
             jid = j["id"]
             if jid in seen:
                 continue
@@ -72,7 +78,7 @@ class MicroTasks(BaseStrategy):
             leads.append({"title": j["title"], "company": j["company"], "url": j["url"],
                           "score": j["score"], "hourly": j["hourly"], "file": fname})
 
-        seen |= {j["id"] for j in jobs}
+        seen |= {j["id"] for j in jobs if isinstance(j, dict) and j.get("id")}
         ctx.ledger.set_state(self.SEEN_KEY, sorted(seen)[-800:])
         if top:
             ctx.notify(f"Earner found {len(top)} new matching gigs, best: "
@@ -82,33 +88,155 @@ class MicroTasks(BaseStrategy):
 
     # --------------------------------------------------------------
 
+    def _builtin_feeds(self):
+        """Keyless public APIs that always run in addition to config feed_urls."""
+        out = []
+        for fn in (self._arbeitnow, self._hackernews_jobs, self._remoteok, self._hn_who_is_hiring):
+            try:
+                out.extend(fn())
+            except Exception:  # noqa: BLE001
+                continue
+        return out
+
+    def _arbeitnow(self):
+        data = http_get_json("https://www.arbeitnow.com/api/job-board-api")
+        items = data.get("data") if isinstance(data, dict) else data
+        out = []
+        for j in (items or [])[:80]:
+            if not isinstance(j, dict) or not j.get("title"):
+                continue
+            out.append({
+                "id": str(j.get("slug") or j.get("url") or j["title"]),
+                "title": str(j["title"]).strip(),
+                "company": str(j.get("company_name") or "?").strip(),
+                "url": j.get("url") or "",
+                "description": strip_html(j.get("description") or "")[:1200],
+            })
+        return out
+
+    def _hackernews_jobs(self):
+        ids = http_get_json("https://hacker-news.firebaseio.com/v0/jobstories.json") or []
+        out = []
+        for hid in ids[:6]:
+            try:
+                item = http_get_json(f"https://hacker-news.firebaseio.com/v0/item/{hid}.json")
+            except Exception:  # noqa: BLE001
+                continue
+            if not isinstance(item, dict) or not item.get("title"):
+                continue
+            text = strip_html(item.get("text") or "")
+            url = item.get("url") or f"https://news.ycombinator.com/item?id={hid}"
+            out.append({
+                "id": f"hn-{hid}",
+                "title": str(item["title"]).strip(),
+                "company": "Hacker News",
+                "url": url,
+                "description": text[:1200],
+            })
+        return out
+
+    def _remoteok(self):
+        data = http_get_json(
+            "https://remoteok.com/api",
+            headers={"User-Agent": "EarnerAgent/1.0 (job scout; +https://github.com)"},
+        )
+        out = []
+        for j in (data or [])[:80]:
+            if not isinstance(j, dict) or not j.get("position"):
+                continue
+            desc = strip_html(j.get("description") or " ".join(j.get("tags") or []))
+            out.append({
+                "id": str(j.get("id") or j.get("slug") or j["position"]),
+                "title": str(j["position"]).strip(),
+                "company": str(j.get("company") or "?").strip(),
+                "url": j.get("url") or j.get("apply_url") or "",
+                "description": desc[:1200],
+            })
+        return out
+
+    def _hn_who_is_hiring(self):
+        data = http_get_json(
+            "https://hn.algolia.com/api/v1/search_by_date?query=hiring&tags=story&hitsPerPage=20")
+        out = []
+        for h in (data or {}).get("hits") or []:
+            title = h.get("title") or ""
+            if "hiring" not in title.lower() and "freelancer" not in title.lower():
+                continue
+            hid = h.get("objectID") or h.get("story_id") or title
+            out.append({
+                "id": f"hn-algolia-{hid}",
+                "title": str(title).strip(),
+                "company": "Hacker News",
+                "url": h.get("url") or f"https://news.ycombinator.com/item?id={hid}",
+                "description": strip_html(h.get("story_text") or title)[:1200],
+            })
+        return out
+
     def _fetch(self, url):
         out = []
         body = http_get_text(url)
         if body.lstrip().startswith("{") or body.lstrip().startswith("["):
             data = http_get_json(url)
-            items = data.get("jobs") if isinstance(data, dict) else data
+            items = self._json_items(data)
             for j in (items or []):
-                if isinstance(j, dict) and j.get("title"):
-                    out.append({
-                        "id": str(j.get("id") or j.get("slug") or j["title"]),
-                        "title": str(j["title"]).strip(),
-                        "company": (j.get("company_name") or j.get("company") or "?").strip(),
-                        "url": j.get("url") or j.get("link") or "",
-                        "description": strip_html(j.get("description") or "")[:1200],
-                    })
+                parsed = self._normalize_job(j)
+                if parsed:
+                    out.append(parsed)
             return out
         root = ET.fromstring(body)  # RSS/Atom fallback
         for item in root.iter():
-            if item.tag.rsplit("}", 1)[-1] == "item":
-                gett = lambda tag, el=item: (el.findtext(tag) or el.findtext(
-                    "{http://www.w3.org/2005/Atom}" + tag) or "")  # noqa: E731
-                title = strip_html(gett("title"))
-                if title:
-                    out.append({"id": gett("guid") or title, "title": title.strip(),
-                                "company": "?", "url": gett("link"),
-                                "description": strip_html(gett("description"))[:1200]})
+            tag = item.tag.rsplit("}", 1)[-1]
+            if tag not in ("item", "entry"):
+                continue
+            gett = lambda t, el=item: (el.findtext(t) or el.findtext(
+                "{http://www.w3.org/2005/Atom}" + t) or "")  # noqa: E731
+            title = strip_html(gett("title"))
+            link = gett("link")
+            if not link:
+                child = item.find("{http://www.w3.org/2005/Atom}link")
+                if child is not None:
+                    link = child.get("href") or ""
+            if title:
+                out.append({
+                    "id": gett("guid") or gett("id") or title,
+                    "title": title.strip(),
+                    "company": "?",
+                    "url": link,
+                    "description": strip_html(gett("description") or gett("summary") or gett("content"))[:1200],
+                })
         return out
+
+    @staticmethod
+    def _json_items(data):
+        if isinstance(data, list):
+            return data
+        if not isinstance(data, dict):
+            return []
+        for key in ("jobs", "data", "results", "items"):
+            if isinstance(data.get(key), list):
+                return data[key]
+        return []
+
+    @staticmethod
+    def _normalize_job(j):
+        if not isinstance(j, dict):
+            return None
+        title = j.get("title") or j.get("position") or j.get("name") or j.get("jobTitle")
+        if not title:
+            return None
+        company = j.get("company_name") or j.get("companyName") or j.get("company") or "?"
+        if isinstance(company, dict):
+            company = company.get("name") or "?"
+        url = (j.get("url") or j.get("link") or j.get("jobUrl")
+               or (j.get("refs") or {}).get("landing_page") or "")
+        desc = j.get("description") or j.get("jobDescription") or j.get("contents") or ""
+        return {
+            "id": str(j.get("id") or j.get("slug") or j.get("jobId") or title),
+            "title": str(title).strip(),
+            "company": str(company).strip(),
+            "url": url,
+            "description": strip_html(desc)[:1200],
+        }
 
     def _proposal(self, j, skills):
         why = "\n".join(f"- Hands-on experience with **{s}**." for s in j["hits"]) or \

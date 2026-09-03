@@ -61,11 +61,16 @@ class Ledger:
 
     def per_strategy_today(self):
         rows = self.cx.execute(
-            "SELECT strategy, kind, SUM(amount) s FROM transactions WHERE day=? GROUP BY strategy, kind",
+            "SELECT strategy, kind, SUM(amount) s, COUNT(*) c FROM transactions"
+            " WHERE day=? GROUP BY strategy, kind",
             (today_str(),)).fetchall()
         out = {}
         for r in rows:
-            out.setdefault(r["strategy"], {})[r["kind"]] = round(r["s"], 2)
+            bucket = out.setdefault(r["strategy"], {})
+            if r["kind"] == "lead":
+                bucket["lead"] = int(r["c"])
+            else:
+                bucket[r["kind"]] = round(r["s"], 2)
         return out
 
     def survival_streak(self, target):

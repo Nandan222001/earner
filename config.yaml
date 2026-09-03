@@ -51,3 +51,12 @@ strategies:
     max_leads_per_run: 5
     feed_urls:
       - "https://remotive.com/api/remote-jobs?limit=60"
+      - "https://jobicy.com/api/v2/remote-jobs?count=50"
+      - "https://www.themuse.com/api/public/jobs?page=1"
+      - "https://weworkremotely.com/categories/remote-programming-jobs.rss"
+      - "https://weworkremotely.com/categories/remote-full-stack-programming-jobs.rss"
+
+  bounty_scout:
+    enabled: true
+    skills: ["python", "javascript", "documentation"]
+    max_leads_per_run: 4

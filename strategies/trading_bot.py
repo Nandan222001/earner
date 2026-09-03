@@ -127,5 +127,16 @@ class TradingBot(BaseStrategy):
                 f"?fsym={base}&tsym={quote}&limit=72")
             return [float(c["close"]) for c in d["Data"]["Data"]]
         except Exception:  # noqa: BLE001
+            pass
+        try:  # CoinGecko public fallback (no key needed)
+            cg_id = {"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana"}.get(base.upper())
+            if not cg_id:
+                return []
+            d = http_get_json(
+                f"https://api.coingecko.com/api/v3/coins/{cg_id}/market_chart"
+                f"?vs_currency=usd&days=3&interval=hourly")
+            prices = d.get("prices") or []
+            return [float(p[1]) for p in prices[-72:]]
+        except Exception:  # noqa: BLE001
             return []
 
