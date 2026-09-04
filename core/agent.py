@@ -9,14 +9,14 @@ import traceback
 import yaml
 
 from .ledger import Ledger
-from .utils import DATA_DIR, extract_pitch, post_webhook, today_str
+from .utils import DATA_DIR, extract_pitch, notify_ntfy, post_webhook, send_telegram, today_str
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DEFAULTS = {
     "agent": {"name": "Earner", "loop_interval_minutes": 30},
     "survival": {"daily_target_usd": 10.0, "currency": "USD"},
-    "notifications": {"webhook_url": ""},
+    "notifications": {"webhook_url": "", "ntfy": {"topic": "", "base_url": "https://ntfy.sh"}, "telegram": {"bot_token": "", "chat_id": "", "https_proxy": ""}},
     "strategies": {},
 }
 
@@ -49,6 +49,11 @@ class AgentContext:
 
     def notify(self, text):
         self.log.info("NOTIFY: %s", text.replace("\n", " | "))
+        ntf = (self.config.get("notifications") or {}).get("ntfy") or {}
+        notify_ntfy(ntf.get("topic", ""), text, ntf.get("base_url", "https://ntfy.sh"))
+        tg = (self.config.get("notifications") or {}).get("telegram") or {}
+        send_telegram(tg.get("bot_token", ""), tg.get("chat_id", ""), text,
+                      tg.get("https_proxy", ""))
         post_webhook(self.webhook, text)
 
 

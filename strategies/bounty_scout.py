@@ -3,7 +3,7 @@ import os
 from urllib.parse import quote_plus
 
 from .base import BaseStrategy
-from core.utils import http_get_json, now_iso, slugify
+from core.utils import clip, http_get_json, now_iso, slugify
 
 QUERIES = [
     'label:bounty state:open',
@@ -57,7 +57,16 @@ class BountyScout(BaseStrategy):
         seen |= {i["id"] for i in issues}
         ctx.ledger.set_state(self.SEEN_KEY, sorted(seen)[-800:])
         if top:
-            ctx.notify(f"Earner found {len(top)} GitHub bounties, best: {top[0]['title']}")
+            lines = [f"🧧 {len(top)} NEW BOUNTY OPPORTUNITIES — tap a link to claim"]
+            for iss in top:
+                lines.append(
+                    f"\n• {clip(iss['title'], 80)}\n"
+                    f"  📦 {iss.get('repo') or '?'} · ⭐ score {iss['score']}\n"
+                    f"  🏷 {', '.join(iss.get('labels') or []) or 'none'}\n"
+                    f"  📝 {clip(iss.get('body') or '(no description)', 170)}\n"
+                    f"  🔗 {iss['url']}"
+                )
+            ctx.notify("\n".join(lines))
         return {"ok": True, "scanned": len(issues), "new_matches": len(leads),
                 "leads": leads, "checked_at": now_iso()}
 

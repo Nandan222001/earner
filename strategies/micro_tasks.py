@@ -4,7 +4,7 @@ import re
 import xml.etree.ElementTree as ET
 
 from .base import BaseStrategy
-from core.utils import http_get_json, http_get_text, now_iso, slugify, strip_html
+from core.utils import clip, http_get_json, http_get_text, now_iso, slugify, strip_html
 
 MONEY_RE = re.compile(
     r"(?:\$|USD\s?)([\d][\d,]*)\s*(k?)"
@@ -81,8 +81,16 @@ class MicroTasks(BaseStrategy):
         seen |= {j["id"] for j in jobs if isinstance(j, dict) and j.get("id")}
         ctx.ledger.set_state(self.SEEN_KEY, sorted(seen)[-800:])
         if top:
-            ctx.notify(f"Earner found {len(top)} new matching gigs, best: "
-                       f"{top[0]['title']} ({top[0]['company']})")
+            lines = [f"🔶 {len(top)} NEW MATCHING GIGS — tap a link to apply"]
+            for j in top:
+                rate = f"${j['hourly']}/hr" if j.get("hourly") else "salary n/a"
+                lines.append(
+                    f"\n• {clip(j['title'], 80)}\n"
+                    f"  🏢 {j.get('company') or '?'} · 💰 {rate} · ⭐ score {j['score']}\n"
+                    f"  📝 {clip(j.get('description') or '', 170)}\n"
+                    f"  🔗 {j['url']}"
+                )
+            ctx.notify("\n".join(lines))
         return {"ok": True, "scanned": scanned, "new_matches": len(leads),
                 "leads": leads, "checked_at": now_iso()}
 

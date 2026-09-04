@@ -4,7 +4,7 @@ import re
 from urllib.parse import quote_plus
 
 from .base import BaseStrategy
-from core.utils import http_get_json, now_iso, slugify, strip_html
+from core.utils import clip, http_get_json, now_iso, slugify, strip_html
 
 DEFAULT_SUBS = [
     "forhire",
@@ -110,7 +110,15 @@ class RedditScout(BaseStrategy):
         seen |= {p["id"] for p in posts if isinstance(p, dict) and p.get("id")}
         ctx.ledger.set_state(self.SEEN_KEY, sorted(seen)[-800:])
         if top:
-            ctx.notify(f"Earner found {len(top)} Reddit hiring posts, best: {top[0]['title']}")
+            lines = [f"🧑‍💻 {len(top)} HIRING POSTS — tap a link to apply/respond"]
+            for p in top:
+                lines.append(
+                    f"\n• {clip(p['title'], 80)}\n"
+                    f"  📌 r/{p.get('sub') or '?'} · 🏷 {', '.join(p.get('hits') or []) or 'freelance'} · ⭐ {p['score']}\n"
+                    f"  📝 {clip(p.get('body') or '(no body — read the thread)', 170)}\n"
+                    f"  🔗 {p['url']}"
+                )
+            ctx.notify("\n".join(lines))
         return {"ok": True, "scanned": len(posts), "new_matches": len(leads),
                 "leads": leads, "checked_at": now_iso()}
 

@@ -4,6 +4,7 @@ from .affiliate_content import AffiliateContent
 from .micro_tasks import MicroTasks
 from .bounty_scout import BountyScout
 from .reddit_scout import RedditScout
+from .instagram_scout import InstagramScout
 
 REGISTRY = {
     "trading_bot": TradingBot,
@@ -11,6 +12,7 @@ REGISTRY = {
     "micro_tasks": MicroTasks,
     "bounty_scout": BountyScout,
     "reddit_scout": RedditScout,
+    "instagram_scout": InstagramScout,
 }
 
 

@@ -6,7 +6,7 @@
 
 agent:
   name: "Earner"
-  loop_interval_minutes: 30        # how often strategies re-run
+  loop_interval_minutes: 15        # how often strategies re-run
 
 survival:
   daily_target_usd: 10.0           # what the agent must earn per day to "stay alive"
@@ -14,6 +14,13 @@ survival:
 
 notifications:
   webhook_url: ""                  # optional Discord/Slack-style webhook for alerts
+  ntfy:
+    topic: "nmt-leads"                       # optional: ntfy.sh topic (free push, no signup - see README)
+    base_url: "https://ntfy.sh"     # default public server; or self-hosted instance
+  telegram:
+    bot_token: "8450470858:AAEWNYsyIHjADlMQvihtMV9coGW5vqSltPE"                # optional: Telegram bot token (from @BotFather)
+    chat_id: "7172940714"          # your Telegram chat/user id (from getUpdates)
+    https_proxy: ""                # optional: e.g. socks5h://127.0.0.1:1080 (VPN) if Telegram is blocked
 
 strategies:
 
@@ -94,3 +101,12 @@ strategies:
       - react
       - python
       - api
+
+  instagram_scout:
+    enabled: true
+    access_token: ""              # REQUIRED: Meta Graph API token (see README "Instagram")
+    user_id: ""                   # REQUIRED: your Instagram BUSINESS account id
+    require_contact: true         # only notify leads that have a phone/email in caption
+    hashtags: ["clinic", "dentalclinic", "dental", "physiotherapy", "ayurveda", "skincare", "hairsalon", "cafe", "boutique", "smallbusiness", "localbusiness"]
+    keywords: ["need", "appointment", "booking", "call", "website", "dm", "contact", "new business"]
+    max_leads_per_run: 8

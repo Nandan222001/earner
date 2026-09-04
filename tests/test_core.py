@@ -249,6 +249,92 @@ class RedditScoutTests(unittest.TestCase):
         self.assertGreaterEqual(len(os.listdir(self.ctx.out_gigs)), 1)
 
 
+class InstagramScoutTests(unittest.TestCase):
+    def setUp(self):
+        self.db = tmp_db()
+        self.ctx = make_ctx(self.db)
+        self.ctx.notify = lambda t: None
+        self.ctx.out_gigs = tempfile.mkdtemp()
+        self.cfg = {"access_token": "tok123", "user_id": "999",
+                    "hashtags": ["clinic"],
+                    "keywords": ["need", "appointment", "call", "website", "dm"],
+                    "max_leads_per_run": 2, "require_contact": True}
+
+    def tearDown(self):
+        self.ctx.ledger.close()
+        os.unlink(self.db)
+
+    def test_returns_leads_with_captured_contact_and_niche(self):
+        from strategies.instagram_scout import InstagramScout
+        scout = InstagramScout(self.cfg)
+        scout._hashtag_name = lambda tok, uid, h: "ha123"
+        scout._recent_media = lambda tok, uid, hid, kw: [{
+            "id": "post-1", "username": "dentcare_pune",
+            "caption": "New dental clinic in Pune! Call/WhatsApp 98450 12345 for "
+                       "appointments, no website yet.",
+            "permalink": "instagram.com/p/abc123", "media_type": "IMAGE",
+            "like_count": 12, "comments_count": 2,
+        }, {
+            "id": "post-2", "username": "studio_designs",
+            "caption": "We do interiors. Check link in bio.",
+            "permalink": "instagram.com/p/xyz", "media_type": "REEL",
+            "like_count": 40, "comments_count": 5,
+        }]
+        res = scout.run(self.ctx)
+        self.assertTrue(res["ok"])
+        # only the contact-rich lead survives require_contact
+        self.assertEqual(len(res["leads"]), 1)
+        lead = res["leads"][0]
+        self.assertEqual(lead["username"], "dentcare_pune")
+        self.assertEqual(lead["phone"], "98450 12345")
+        self.assertEqual(lead["niche"], "health")
+        self.assertTrue(lead["no_website"])
+        self.assertTrue(any("phone=98450 12345" in t["note"]
+                            for t in self.ctx.ledger.recent(5) if t["kind"] == "lead"))
+
+    def test_require_contact_false_includes_all(self):
+        from strategies.instagram_scout import InstagramScout
+        scout = InstagramScout({**self.cfg, "require_contact": False})
+        scout._hashtag_name = lambda tok, uid, h: "ha123"
+        scout._recent_media = lambda tok, uid, hid, kw: [{
+            "id": "post-1", "username": "coffeeshop_nyc",
+            "caption": "Just started; need a website, dm us.",   # no phone/email
+            "permalink": "instagram.com/p/abc123", "media_type": "IMAGE",
+            "like_count": 4, "comments_count": 1,
+        }]
+        res = scout.run(self.ctx)
+        self.assertEqual(res["new_matches"], 1)
+
+    def test_contact_regex_parses_mobile_and_email(self):
+        from strategies.instagram_scout import extract_contact
+        phone, email = extract_contact("Call us at +91 98450 12345 or mail hello@clinic.in today")
+        self.assertEqual(phone, "+91 98450 12345")
+        self.assertEqual(email, "hello@clinic.in")
+        # URL noise must not be captured as a phone
+        p2, _ = extract_contact("see https://instagram.com/p/98450 123456 detail")
+        self.assertNotIn("98450", p2 or "")
+
+    def test_skips_when_no_token(self):
+        from strategies.instagram_scout import InstagramScout
+        scout = InstagramScout({"access_token": ""})
+        res = scout.run(self.ctx)
+        self.assertFalse(res["ok"])
+        self.assertEqual(res.get("skipped"), "no graph token/user_id")
+
+    def test_detect_niche_word_boundaries(self):
+        # brand/username substrings must not fake a niche -> wrong offer
+        from strategies.instagram_scout import detect_niche
+        self.assertEqual(detect_niche("dental clinic, call for appointments"), "health")
+        self.assertEqual(detect_niche("relax at our day spa and salon"), "health")
+        self.assertEqual(detect_niche("supplies for every dental lab"), "health")
+        # 'lab' inside a brand name is NOT health (regression: growthlabs)
+        self.assertEqual(detect_niche("AI Labs - add a chatbot to your website"), "business")
+        # 'spa' inside 'space' is NOT health
+        self.assertEqual(detect_niche("co-working space for startups, contact us"), "business")
+        self.assertEqual(detect_niche("new cafe opening, dm to order"), "commerce")
+        self.assertEqual(detect_niche("boutique clothing store, link in bio"), "commerce")
+
+
 class ConfigTests(unittest.TestCase):
     def test_deep_merge_preserves_siblings(self):
         out = deep_merge(DEFAULTS, {"survival": {"daily_target_usd": 25},
@@ -259,6 +345,87 @@ class ConfigTests(unittest.TestCase):
         tb = out["strategies"]["trading_bot"]
         self.assertEqual(tb["symbol"], "ETHUSDT")
         self.assertEqual(tb.get("mode", "paper"), "paper")   # runtime default via opt()
+
+
+class TelegramNotifyTests(unittest.TestCase):
+    """send_telegram posts the correct payload to the Telegram Bot API (no network)."""
+
+    def test_send_telegram_builds_correct_request(self):
+        import core.utils as utils
+        import requests
+        captured = {}
+        orig = requests.post
+
+        def fake_post(url, json=None, timeout=25, proxies=None, **kwargs):
+            captured["url"] = url
+            captured["json"] = json
+            captured["proxies"] = proxies
+            resp = types.SimpleNamespace()
+            resp.raise_for_status = lambda: None
+            return resp
+
+        requests.post = fake_post
+        try:
+            ok = utils.send_telegram("123456:ABC", "987654321", "hello world")
+            self.assertTrue(ok)
+            self.assertEqual(captured["url"], "https://api.telegram.org/bot123456:ABC/sendMessage")
+            self.assertEqual(captured["json"]["chat_id"], "987654321")
+            self.assertEqual(captured["json"]["text"], "hello world")
+            self.assertIs(captured["json"]["disable_web_page_preview"], True)
+            self.assertIsNone(captured["proxies"])   # no proxy unless configured
+        finally:
+            requests.post = orig
+
+    def test_send_telegram_uses_proxy_when_configured(self):
+        import core.utils as utils
+        import requests
+        captured = {}
+        orig = requests.post
+
+        def fake_post(url, json=None, timeout=25, proxies=None, **kwargs):
+            captured["proxies"] = proxies
+            resp = types.SimpleNamespace()
+            resp.raise_for_status = lambda: None
+            return resp
+
+        requests.post = fake_post
+        try:
+            ok = utils.send_telegram("123456:ABC", "987654321", "hi", "socks5h://127.0.0.1:1080")
+            self.assertTrue(ok)
+            self.assertEqual(captured["proxies"],
+                             {"https": "socks5h://127.0.0.1:1080", "http": "socks5h://127.0.0.1:1080"})
+        finally:
+            requests.post = orig
+
+    def test_send_telegram_noops_when_unconfigured(self):
+        import core.utils as utils
+        self.assertFalse(utils.send_telegram("", "", "hi"))
+        self.assertFalse(utils.send_telegram("123:TOKEN", "", "hi"))
+        self.assertFalse(utils.send_telegram("", "987", "hi"))
+
+    def test_notify_ntfy_builds_correct_request(self):
+        import core.utils as utils
+        captured = {}
+        orig = utils.http_post_json
+
+        def fake_post(url, payload=None, auth=None, headers=None, timeout=25, retries=1):
+            captured["url"] = url
+            captured["payload"] = payload
+            return None
+
+        utils.http_post_json = fake_post
+        try:
+            ok = utils.notify_ntfy("mysubject", "found a gig", title="Earner")
+            self.assertTrue(ok)
+            self.assertEqual(captured["url"], "https://ntfy.sh/")
+            self.assertEqual(captured["payload"], {"topic": "mysubject", "message": "found a gig", "title": "Earner"})
+        finally:
+            utils.http_post_json = orig
+
+    def test_notify_ntfy_noops_when_unconfigured(self):
+        import core.utils as utils
+        self.assertFalse(utils.notify_ntfy("", "hi"))
+        self.assertFalse(utils.notify_ntfy("topic", ""))
 
 
 if __name__ == "__main__":
