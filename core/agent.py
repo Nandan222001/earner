@@ -9,7 +9,7 @@ import traceback
 import yaml
 
 from .ledger import Ledger
-from .utils import DATA_DIR, post_webhook, today_str
+from .utils import DATA_DIR, extract_pitch, post_webhook, today_str
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -132,9 +132,44 @@ class Agent:
             "per_strategy_today": self.ledger.per_strategy_today(),
             "strategies": strategy_results or {},
             "recent_transactions": self.ledger.recent(12),
+            "recent_leads": self._leads_with_pitches(gigs_dir),
             "articles": sorted(os.listdir(arts_dir))[-10:] if os.path.isdir(arts_dir) else [],
             "gigs": sorted(os.listdir(gigs_dir))[-10:] if os.path.isdir(gigs_dir) else [],
         }
+
+    def _leads_with_pitches(self, gigs_dir, limit=16):
+        leads = self.ledger.recent_leads(limit)
+        files = []
+        if os.path.isdir(gigs_dir):
+            files = [os.path.join(gigs_dir, n) for n in os.listdir(gigs_dir)
+                     if n.endswith(".md")]
+            files.sort(key=os.path.getmtime, reverse=True)
+        unused = list(files)
+        for lead in leads:
+            url = (lead.get("url") or "").rstrip("/")
+            pitch, fname = "", ""
+            for path in unused:
+                try:
+                    with open(path, encoding="utf-8") as fh:
+                        body = fh.read()
+                except OSError:
+                    continue
+                if url and url in body:
+                    pitch = extract_pitch(body)
+                    fname = os.path.basename(path)
+                    unused.remove(path)
+                    break
+            if not pitch and unused:
+                path = unused.pop(0)
+                try:
+                    with open(path, encoding="utf-8") as fh:
+                        pitch = extract_pitch(fh.read())
+                    fname = os.path.basename(path)
+                except OSError:
+                    pitch = ""
+            lead["pitch"] = pitch
+            lead["file"] = fname
+        return leads
 
     def write_status(self, strategy_results=None):
         payload = self.status_payload(strategy_results)

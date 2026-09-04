@@ -59,6 +59,23 @@ class Ledger:
             " ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
         return [dict(r) for r in rows]
 
+    def recent_leads(self, limit=30):
+        rows = self.cx.execute(
+            "SELECT ts, strategy, note FROM transactions WHERE kind='lead'"
+            " ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        out = []
+        for r in rows:
+            note = r["note"] or ""
+            url = ""
+            for part in note.split("|"):
+                part = part.strip()
+                if part.startswith("http://") or part.startswith("https://"):
+                    url = part
+            title = note.split("|")[0].strip() if note else "lead"
+            out.append({"ts": r["ts"], "strategy": r["strategy"], "title": title[:120],
+                        "url": url, "note": note[:240]})
+        return out
+
     def per_strategy_today(self):
         rows = self.cx.execute(
             "SELECT strategy, kind, SUM(amount) s, COUNT(*) c FROM transactions"

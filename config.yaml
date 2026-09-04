@@ -60,3 +60,37 @@ strategies:
     enabled: true
     skills: ["python", "javascript", "documentation"]
     max_leads_per_run: 4
+
+  reddit_scout:
+    enabled: true
+    max_leads_per_run: 8
+    subreddits:
+      - forhire
+      - slavelabour
+      - hiring
+      - jobbit
+      - freelance_forhire
+      - WebdevJobs
+      - remotejs
+      - PythonJobs
+    keywords:
+      - website
+      - web development
+      - wordpress
+      - shopify
+      - landing page
+      - app
+      - mobile app
+      - react native
+      - flutter
+      - ai
+      - chatgpt
+      - openai
+      - llm
+      - chatbot
+      - automation
+      - integration
+      - next.js
+      - react
+      - python
+      - api

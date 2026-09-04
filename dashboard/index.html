@@ -29,6 +29,11 @@ footer{color:var(--dim);font-size:11px;margin-top:18px}
 .pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;border:1px solid var(--edge)}
 .alive{border-color:var(--green);color:var(--green)}
 .dead{border-color:var(--red);color:var(--red)}
+.lead{border:1px solid var(--edge);border-radius:8px;padding:12px;margin:0 0 12px}
+.lead h3{margin:0 0 6px;font-size:14px;font-weight:600}
+.pitch{white-space:pre-wrap;background:#0d1117;border:1px solid var(--edge);border-radius:6px;padding:10px;font-size:12px;line-height:1.45;max-height:220px;overflow:auto;color:var(--fg)}
+.btn{background:#21262d;color:var(--fg);border:1px solid var(--edge);border-radius:6px;padding:4px 10px;cursor:pointer;font:inherit;font-size:12px;margin-right:8px}
+.btn:hover{border-color:var(--blue);color:var(--blue)}
 </style>
 </head>
 <body>
@@ -48,6 +53,11 @@ footer{color:var(--dim);font-size:11px;margin-top:18px}
 </div>
 
 <div class="grid" style="margin-top:14px" id="strategies"></div>
+
+<div class="card" style="margin-top:14px">
+  <h2>Leads (apply these)</h2>
+  <div id="leads" class="empty">no leads yet — run python earner.py run --once</div>
+</div>
 
 <div class="grid" style="margin-top:14px">
   <div class="card"><h2>Recent transactions</h2><div id="txs" class="empty">no data</div></div>
@@ -95,6 +105,28 @@ async function refresh(){
       cards += `<div class="card"><h2>${name}</h2>${head}${detail}</div>`;
     }
     $('strategies').innerHTML = cards || '<div class="card empty">no strategy results yet</div>';
+
+    const esc = t => String(t||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    const leadCards = (s.recent_leads||[]).map((l,i)=>{
+      const title = String(l.title||l.note||'lead').slice(0,110);
+      const link = l.url ? `<a href="${l.url}" target="_blank">${esc(title)}</a>` : esc(title);
+      const pitch = l.pitch || 'Open the gig file in data/output/gigs/ and copy the message under ---';
+      return `<div class="lead">
+        <h3>${link}</h3>
+        <div class="row"><span>${esc(l.strategy||'')} · ${esc(String(l.ts||'').slice(5,16))}</span>
+          <span><button class="btn" data-copy="${i}">Copy pitch</button>
+          ${l.url?`<a class="btn" href="${l.url}" target="_blank">Open thread</a>`:''}</span></div>
+        <div class="pitch" id="pitch-${i}">${esc(pitch)}</div>
+      </div>`;
+    }).join('');
+    $('leads').innerHTML = leadCards || 'no leads yet — run python earner.py run --once';
+    $('leads').querySelectorAll('[data-copy]').forEach(btn=>{
+      btn.onclick = () => {
+        const el = $('pitch-'+btn.getAttribute('data-copy'));
+        const text = el ? el.innerText : '';
+        navigator.clipboard.writeText(text).then(()=>{ btn.textContent='Copied'; setTimeout(()=>btn.textContent='Copy pitch',1200); });
+      };
+    });
 
     const rows = (s.recent_transactions||[]).map(t=>
       `<tr><td>${t.ts.slice(5,16)}</td><td>${t.strategy}</td>

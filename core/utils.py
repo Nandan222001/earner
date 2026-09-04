@@ -36,7 +36,7 @@ def _request(fn, retries):
     raise last
 
 
-def http_get_json(url, timeout=20, retries=2, headers=None):
+def http_get_json(url, timeout=20, retries=2, headers=None):  # retries overridable
     import requests
     h = {"User-Agent": "EarnerAgent/1.0 (local automation; contact: you)", "Accept": "application/json"}
     if headers:
@@ -93,3 +93,14 @@ def slugify(text, max_len=60):
 
 def strip_html(raw):
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", raw or "")).strip()
+
+
+def extract_pitch(markdown):
+    """Pull the copy-paste message from a draft (text after the first ---)."""
+    text = markdown or ""
+    if "\n---\n" in text:
+        text = text.split("\n---\n", 1)[1]
+    for stop in ("\n---\nPost excerpt:", "\nIssue excerpt:", "\nPost excerpt:"):
+        if stop in text:
+            text = text.split(stop, 1)[0]
+    return text.strip()

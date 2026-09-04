@@ -13,10 +13,12 @@ sys.path.insert(0, ROOT)
 os.chdir(ROOT)
 
 from core.agent import DEFAULTS, deep_merge          # noqa: E402
+from core.utils import extract_pitch                  # noqa: E402
 from core.ledger import Ledger                        # noqa: E402
 from strategies.micro_tasks import MicroTasks, parse_salary  # noqa: E402
 from strategies.trading_bot import TradingBot         # noqa: E402
 from strategies.bounty_scout import BountyScout       # noqa: E402
+from strategies.reddit_scout import RedditScout       # noqa: E402
 
 
 def make_ctx(db_path):
@@ -76,6 +78,19 @@ class LedgerTests(unittest.TestCase):
         today = self.led.per_strategy_today()["gigs"]
         self.assertEqual(today["lead"], 2)
         self.assertEqual(today["earn"], 12.5)
+
+    def test_recent_leads_extracts_url(self):
+        self.led.record("reddit_scout", "lead", 0,
+                        note="GovStar AI | https://news.ycombinator.com/item?id=1")
+        leads = self.led.recent_leads(5)
+        self.assertEqual(leads[0]["url"], "https://news.ycombinator.com/item?id=1")
+        self.assertIn("GovStar", leads[0]["title"])
+
+
+class PitchExtractTests(unittest.TestCase):
+    def test_strips_header_and_excerpt(self):
+        md = "# draft\nLink: x\n\n---\nHi there,\n\nI can start.\n\n---\nPost excerpt:\nnoise"
+        self.assertEqual(extract_pitch(md), "Hi there,\n\nI can start.")
 
 
 class SalaryParsingTests(unittest.TestCase):
@@ -199,6 +214,38 @@ class BountyScoutTests(unittest.TestCase):
         self.assertEqual(res["new_matches"], 1)
         notes = [t["note"] for t in self.ctx.ledger.recent(5) if t["kind"] == "lead"]
         self.assertTrue(any("Pay bounty for docs" in n for n in notes))
+        self.assertGreaterEqual(len(os.listdir(self.ctx.out_gigs)), 1)
+
+
+class RedditScoutTests(unittest.TestCase):
+    def setUp(self):
+        self.db = tmp_db()
+        self.ctx = make_ctx(self.db)
+        self.ctx.notify = lambda t: None
+        self.ctx.out_gigs = tempfile.mkdtemp()
+
+    def tearDown(self):
+        self.ctx.ledger.close()
+        os.unlink(self.db)
+
+    def test_records_hiring_posts(self):
+        scout = RedditScout({"max_leads_per_run": 2, "subreddits": ["forhire"],
+                             "keywords": ["website", "ai"], "try_reddit": True})
+        scout._listing = lambda sub: [{
+            "id": "abc123",
+            "title": "[Hiring] Need a website + AI chatbot",
+            "sub": "forhire",
+            "url": "https://www.reddit.com/r/forhire/comments/abc123/",
+            "body": "Looking for someone to build a website with AI integration. Budget $400.",
+            "author": "client1",
+            "comments": 2,
+        }]
+        scout._search = lambda kws: []
+        scout._hn_seeking_freelancer = lambda kws: []
+        scout._hn_who_is_hiring = lambda kws: []
+        res = scout.run(self.ctx)
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["new_matches"], 1)
         self.assertGreaterEqual(len(os.listdir(self.ctx.out_gigs)), 1)
 
 
